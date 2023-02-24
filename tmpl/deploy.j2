@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kube-certs
+  namespace: demo
+spec:
+  selector:
+    matchLabels:
+      app: kube-certs
+  template:
+    metadata:
+      labels:
+        app: kube-certs
+    spec:
+      terminationGracePeriodSeconds: 5
+      containers:
+      - name: server
+        image: saiyam911/kube-certs:{{ image_deploy_tag }}
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        env:
+        - name: PORT
+          value: "8080"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kube-certs
+  namespace: demo
+spec:
+  selector:
+    app: kube-certs
+  ports:
+  - name: http
+    port: 80
+    protocol: TCP
+    targetPort: 8080
+  type: NodePort 
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: kubeissuer
+  namespace: demo
+spec:
+  acme:
+    # The ACME server URL
+    server: https://acme-v02.api.letsencrypt.org/directory
+    # Email address used for ACME registration
+    email: demo@demo.com
+    # Name of a secret used to store the ACME account private key
+    privateKeySecretRef:
+      name: kubeissuer
+    # Enable the HTTP-01 challenge provider
+    solvers:
+    - http01:
+        ingress:
+          class: nginx          
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: kubecert
+  namespace: demo
+spec:
+  secretName: demo
+  issuerRef:
+    name: kubeissuer
+    kind: ClusterIssuer
+  commonName: demo.a29874f5-4ef6-4c0e-bcf4-8aa80083fb4f.lb.civo.com
+  dnsNames:
+  - demo.a29874f5-4ef6-4c0e-bcf4-8aa80083fb4f.lb.civo.com 
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: kubeissuer
+    kubernetes.io/ingress.class: nginx
+  name: kube-certs-ingress
+  namespace: demo
+spec:
+  rules:
+  - host: demo.a29874f5-4ef6-4c0e-bcf4-8aa80083fb4f.lb.civo.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: kube-certs
+            port:
+              number: 80
+        path: /
+        pathType: Prefix
+  tls:
+  - hosts:
+    - demo.a29874f5-4ef6-4c0e-bcf4-8aa80083fb4f.lb.civo.com
+    secretName: demo
+
